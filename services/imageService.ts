@@ -21,13 +21,25 @@ export async function openKeySelector(): Promise<void> {
   }
 }
 
+/**
+ * Custom error type to differentiate permission/quota issues.
+ */
+export class ImageGenError extends Error {
+  constructor(public code: number, message: string) {
+    super(message);
+    this.name = 'ImageGenError';
+  }
+}
+
 export async function generateThematicImage(prompt: string): Promise<string | null> {
-  // Always create a new instance to ensure we use the most recent API key from the dialog
+  // Always create a new instance right before the call to ensure the latest API key is used.
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   try {
+    // Defaulting to gemini-2.5-flash-image as it is the standard for general tasks 
+    // and often has broader access permissions than the preview 'pro' model.
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-image-preview',
+      model: 'gemini-2.5-flash-image',
       contents: {
         parts: [
           {
@@ -40,25 +52,30 @@ export async function generateThematicImage(prompt: string): Promise<string | nu
       },
       config: {
         imageConfig: {
-          aspectRatio: "1:1",
-          imageSize: "1K"
+          aspectRatio: "1:1"
         },
       },
     });
 
-    for (const part of response.candidates?.[0]?.content?.parts || []) {
-      if (part.inlineData) {
-        return `data:image/png;base64,${part.inlineData.data}`;
+    const candidate = response.candidates?.[0];
+    if (candidate?.content?.parts) {
+      for (const part of candidate.content.parts) {
+        if (part.inlineData) {
+          return `data:image/png;base64,${part.inlineData.data}`;
+        }
       }
     }
     return null;
   } catch (error: any) {
     console.error("Image Generation Error:", error);
     
-    // If the error suggests quota issues or missing project, we should return null 
-    // and let the UI handle the key selection flow.
-    if (error?.message?.includes("429") || error?.message?.includes("RESOURCE_EXHAUSTED")) {
-      console.warn("Quota exceeded. User may need to select a paid API key.");
+    const errorMsg = error?.message || "";
+    // Handle 403 (Permission Denied) and 429 (Resource Exhausted)
+    if (errorMsg.includes("403") || errorMsg.includes("PERMISSION_DENIED")) {
+      throw new ImageGenError(403, "Permission denied. A valid project key may be required.");
+    }
+    if (errorMsg.includes("429") || errorMsg.includes("RESOURCE_EXHAUSTED")) {
+      throw new ImageGenError(429, "Quota exhausted. Please use a paid API key.");
     }
     
     return null;

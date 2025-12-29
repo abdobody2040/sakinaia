@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { generateThematicImage, imageCache, checkHasApiKey, openKeySelector } from '../services/imageService';
+import { generateThematicImage, imageCache, checkHasApiKey, openKeySelector, ImageGenError } from '../services/imageService';
 import { Loader2, Image as ImageIcon, Key, AlertCircle } from 'lucide-react';
 import { hapticFeedback } from '../utils/haptics';
 
@@ -20,24 +20,27 @@ const LocalImage: React.FC<Props> = ({ cacheKey, prompt, className = "", alt = "
   const fetchImage = async () => {
     setLoading(true);
     setError(false);
+    setNeedsKey(false);
     
-    // Check if we already have a custom key selected
-    const hasKey = await checkHasApiKey();
-    
-    const data = await generateThematicImage(prompt);
-    if (data) {
-      imageCache.set(cacheKey, data);
-      setSrc(data);
-      setNeedsKey(false);
-    } else {
-      // If generation failed, and we don't have a key, we likely need one
-      if (!hasKey) {
+    try {
+      const data = await generateThematicImage(prompt);
+      if (data) {
+        imageCache.set(cacheKey, data);
+        setSrc(data);
+      } else {
+        setError(true);
+      }
+    } catch (err: any) {
+      if (err instanceof ImageGenError && (err.code === 403 || err.code === 429)) {
+        // Even if checkHasApiKey was true, the current key is failing with 403/429
+        // So we force the "needs key" state to allow re-selection.
         setNeedsKey(true);
       } else {
         setError(true);
       }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
@@ -49,7 +52,7 @@ const LocalImage: React.FC<Props> = ({ cacheKey, prompt, className = "", alt = "
   const handleSetKey = async () => {
     hapticFeedback.impact();
     await openKeySelector();
-    // Proceed immediately as instructed
+    // Proceed immediately as the key selection is handled externally
     fetchImage();
   };
 
@@ -67,13 +70,13 @@ const LocalImage: React.FC<Props> = ({ cacheKey, prompt, className = "", alt = "
       <div className={`${className} bg-indigo-50 dark:bg-indigo-950/30 flex flex-col items-center justify-center p-4 text-center border border-indigo-100 dark:border-indigo-900/30`}>
         <Key size={20} className="text-[#6b5db3] dark:text-indigo-400 mb-2" />
         <p className="text-[10px] font-black text-slate-600 dark:text-slate-400 mb-2 leading-tight">
-          تجاوزت الحصة المجانية. يرجى تفعيل مفتاح API الخاص بك.
+          مشكلة في الصلاحيات أو الحصة. يرجى تفعيل مفتاح API صالح.
         </p>
         <button 
           onClick={handleSetKey}
           className="text-[9px] font-black bg-[#6b5db3] text-white px-3 py-1.5 rounded-lg shadow-sm active:scale-95 transition-all"
         >
-          تفعيل المفتاح
+          تفعيل/تغيير المفتاح
         </button>
       </div>
     );
