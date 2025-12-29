@@ -1,0 +1,7 @@
+{
+  "name": "Sakina (سكينة)",
+  "description": "The ultimate Arabic anxiety toolkit combining the Rootd accessibility, Moodnotes CBT tools, and DARE methodology.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
